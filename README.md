@@ -2,6 +2,7 @@
  A Udon script for VRChat to link players to moving platforms.
  
 Video example: 
+
 https://github.com/jetdog8808/Platform-Link/assets/36026251/1ac9db53-6c73-4a1d-83af-f32d295601a6
 
 ## How it works
