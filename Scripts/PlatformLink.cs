@@ -62,7 +62,7 @@ public class PlatformLink : UdonSharpBehaviour
             //last location on platform + how much player moved from last frame.
             Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarRoot.position - lastWorldPos);
             //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
-            Quaternion teleportRot = Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRoot.rotation * Quaternion.Inverse(lastWorldRot));
+            Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRoot.rotation * Quaternion.Inverse(lastWorldRot))).normalized;
             float velocityZ, velocityX;
             Vector3 currentVelocity = localPlayer.GetVelocity();
 
@@ -149,7 +149,7 @@ public class PlatformLink : UdonSharpBehaviour
         if (linkedObject != null)
         {
             Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarPos - lastWorldPos);
-            Quaternion teleportRot = Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRot * Quaternion.Inverse(lastWorldRot));
+            Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRot * Quaternion.Inverse(lastWorldRot))).normalized;
 
             localPlayer.TeleportTo(teleportPoint, teleportRot, VRC_SceneDescriptor.SpawnOrientation.AlignPlayerWithSpawnPoint, true);
 
