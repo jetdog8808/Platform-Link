@@ -276,7 +276,8 @@ MonoBehaviour:
       Data: 16|UnityEngine.TooltipAttribute, UnityEngine.CoreModule
     - Name: tooltip
       Entry: 1
-      Data: Automatic link is turned off and can only link with code.
+      Data: Automatic link is turned off and can only link, and unlink by calling
+        the appropriate methods.
     - Name: 
       Entry: 8
       Data: 
