@@ -265,6 +265,14 @@ public class PlatformLink : UdonSharpBehaviour
         if (inheriteVelocity) localPlayer.SetVelocity(localPlayer.GetVelocity() + Velocity);
     }
 
+    private void OnDisable()
+    {
+        if (linkedObject != null)
+        {
+            ReleaseFromPlatform(Vector3.zero);
+        }
+    }
+
     public override void InputMoveHorizontal(float value, UdonInputEventArgs args)
     {
         inputH = value;
