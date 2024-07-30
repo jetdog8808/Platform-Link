@@ -13,6 +13,8 @@ public class PlatformLink : UdonSharpBehaviour
     public bool inheriteVelocity = true;
     [Tooltip("How high off the collider should the player be before they unlink from it.")]
     public float unLinkDistance = 10f;
+    [Tooltip("Automatic link is turned off and can only link, and unlink by calling the appropriate methods.")]
+    public bool linkLock = false;
 
     private Transform linkedObject;
     private Vector3 lastWorldPos, lastLocalPos, lastPlatformPos, lastLocalRot;
@@ -110,35 +112,39 @@ public class PlatformLink : UdonSharpBehaviour
             Physics.SyncTransforms();
         }
 
-        //Check if there is a valid platfrom and link/unlink from results. 
-        if (PlatformCheck(avatarRoot.position, out RaycastHit hitinfo))
+        if (!linkLock)
         {
-            //is player currently linked to a platform.
-            if(linkedObject == null)
+            //Check if there is a valid platfrom and link/unlink from results. 
+            if (PlatformCheck(avatarRoot.position, out RaycastHit hitinfo))
             {
-                //only link if player is grounded
-                if (localPlayer.IsPlayerGrounded()) LinkToPlatform(hitinfo.transform, avatarRoot.position, avatarRoot.rotation);
+                //is player currently linked to a platform.
+                if (linkedObject == null)
+                {
+                    //only link if player is grounded
+                    if (localPlayer.IsPlayerGrounded()) LinkToPlatform(hitinfo.transform, avatarRoot.position, avatarRoot.rotation);
+                }
+                else
+                {
+                    //reset unlink timer, and link to new platform if different then current platform.
+                    unLinkTimer = 0f;
+                    if (linkedObject != hitinfo.transform) LinkToPlatform(hitinfo.transform, avatarRoot.position, avatarRoot.rotation);
+                }
             }
             else
             {
-                //reset unlink timer, and link to new platform if different then current platform.
-                unLinkTimer = 0f;
-                if (linkedObject != hitinfo.transform) LinkToPlatform(hitinfo.transform, avatarRoot.position, avatarRoot.rotation);
-            }
-        }
-        else
-        {
-            //if currently linked to a platform.
-            if (linkedObject != null)
-            {
-                //add time to unlink timer. If greater then threshold release from platform.
-                unLinkTimer += Time.deltaTime;
-                if(unLinkTimer > 0.1f)
+                //if currently linked to a platform.
+                if (linkedObject != null)
                 {
-                    ReleaseFromPlatform(platformVelocity);
-                }                
+                    //add time to unlink timer. If greater then threshold release from platform.
+                    unLinkTimer += Time.deltaTime;
+                    if (unLinkTimer > 0.1f)
+                    {
+                        ReleaseFromPlatform(platformVelocity);
+                    }
+                }
             }
         }
+        
 #else
         //clientsim:
         Vector3 avatarPos = localPlayer.GetPosition();
@@ -162,21 +168,25 @@ public class PlatformLink : UdonSharpBehaviour
             lastPlatformPos = linkedObject.position;
         }
 
-        if (PlatformCheck(avatarPos, out RaycastHit hitinfo))
+        if (!linkLock)
         {
-            if (linkedObject == null)
+            if (PlatformCheck(avatarPos, out RaycastHit hitinfo))
             {
-                if (localPlayer.IsPlayerGrounded()) LinkToPlatform(hitinfo.transform, avatarPos, avatarRot);
+                if (linkedObject == null)
+                {
+                    if (localPlayer.IsPlayerGrounded()) LinkToPlatform(hitinfo.transform, avatarPos, avatarRot);
+                }
+                else
+                {
+                    if (linkedObject != hitinfo.transform) LinkToPlatform(hitinfo.transform, avatarPos, avatarRot);
+                }
             }
             else
             {
-                if (linkedObject != hitinfo.transform) LinkToPlatform(hitinfo.transform, avatarPos, avatarRot);
+                if (linkedObject != null) ReleaseFromPlatform(platformVelocity);
             }
         }
-        else
-        {
-            if (linkedObject != null) ReleaseFromPlatform(platformVelocity);
-        }
+        
 #endif
     }
 
@@ -246,7 +256,7 @@ public class PlatformLink : UdonSharpBehaviour
     }
 
     //setup variables at start of link.
-    private void LinkToPlatform(Transform platform, Vector3 pos, Quaternion rot)
+    public void LinkToPlatform(Transform platform, Vector3 pos, Quaternion rot, bool lockToPlatform = false)
     {
         linkedObject = platform;
         lastWorldPos = pos;
@@ -254,6 +264,7 @@ public class PlatformLink : UdonSharpBehaviour
         lastWorldRot = rot;
         lastLocalRot = platform.InverseTransformDirection(rot * Vector3.forward);
         lastPlatformPos = platform.position;
+        linkLock = lockToPlatform;
     }
 
     //unlinks player from platform.
@@ -264,7 +275,7 @@ public class PlatformLink : UdonSharpBehaviour
         //if inherit velocity is true add release velocity to player.
         if (inheriteVelocity) localPlayer.SetVelocity(localPlayer.GetVelocity() + Velocity);
     }
-
+    //makes sure to unlink players when disabled.
     private void OnDisable()
     {
         if (linkedObject != null)
