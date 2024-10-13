@@ -108,8 +108,6 @@ public class PlatformLink : UdonSharpBehaviour
 
             platformVelocity = (linkedObject.position - lastPlatformPos) / Time.deltaTime;
             lastPlatformPos = linkedObject.position;
-            // syncs up the the menus colliders. making it easier to use on platform.
-            Physics.SyncTransforms();
         }
 
         if (!linkLock)
