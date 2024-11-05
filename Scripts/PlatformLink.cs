@@ -113,7 +113,7 @@ public class PlatformLink : UdonSharpBehaviour
         if (!linkLock)
         {
             //Check if there is a valid platfrom and link/unlink from results. 
-            if (PlatformCheck(avatarRoot.position, out RaycastHit hitinfo))
+            if (PlatformCheck((linkedObject == null) ? avatarRoot.position : lastWorldPos, out RaycastHit hitinfo))
             {
                 //is player currently linked to a platform.
                 if (linkedObject == null)
