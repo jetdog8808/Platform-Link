@@ -17,7 +17,8 @@ public class PlatformLink : UdonSharpBehaviour
     public bool linkLock = false;
 
     private Transform linkedObject;
-    private Vector3 lastWorldPos, lastLocalPos, lastPlatformPos, lastLocalRot, lastVelocity;
+    private Vector3 lastWorldPos, lastLocalPos, lastPlatformPos, lastLocalRot;
+    private Vector3 platformVelocity;
     private Quaternion lastWorldRot;
     private float inputH, inputV,
         unLinkTimer;
@@ -27,6 +28,7 @@ public class PlatformLink : UdonSharpBehaviour
     private const int localLayerMask = 1024;
     private int localPlayerCollision;
     private VRCPlayerApi localPlayer;
+    private bool fixedupdate;
     
     private void Start()
     {
@@ -42,7 +44,7 @@ public class PlatformLink : UdonSharpBehaviour
 
     public void LateUpdate()
     {
-        Vector3 platformVelocity = Vector3.zero;
+        
 #if !UNITY_EDITOR
         //VRC Runtime:
         VRCPlayerApi.TrackingData avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.AvatarRoot);
@@ -58,18 +60,16 @@ public class PlatformLink : UdonSharpBehaviour
             return;
         }
 
-        if (Time.unscaledTimeAsDouble - Time.fixedUnscaledTimeAsDouble + Time.unscaledDeltaTime < Time.fixedUnscaledDeltaTime) return;
+        if (!fixedupdate) return;
+        fixedupdate = false;
 
         //If linked move with the platform.
         if (linkedObject != null)
         {
             //last location on platform + how much player moved from last frame.
             Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarRoot.position - lastWorldPos);
-            if (Mathf.Approximately(inputV, 0f) && Mathf.Approximately(inputH, 0f)) teleportPoint = linkedObject.TransformPoint(lastLocalPos);
             //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
             Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRoot.rotation * Quaternion.Inverse(lastWorldRot))).normalized;
-            float velocityZ, velocityX;
-            Vector3 currentVelocity = localPlayer.GetVelocity();
 
             if (localPlayer.IsUserInVR())
             {
@@ -77,41 +77,17 @@ public class PlatformLink : UdonSharpBehaviour
                 VRCPlayerApi.TrackingData origin = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
                 Quaternion invPlayerRot = Quaternion.Inverse(avatarRoot.rotation);
                 localPlayer.TeleportTo(teleportPoint + teleportRot * invPlayerRot * (origin.position - avatarRoot.position), teleportRot * (invPlayerRot * origin.rotation), VRC_SceneDescriptor.SpawnOrientation.AlignRoomWithSpawnPoint, true);
-
-                velocityZ = localPlayer.GetRunSpeed() * inputV;
-                velocityX = localPlayer.GetStrafeSpeed() * inputH;
             }
             else
             {
                 localPlayer.TeleportTo(teleportPoint, teleportRot, VRC_SceneDescriptor.SpawnOrientation.AlignPlayerWithSpawnPoint, true);
-
-                if (Input.GetKey(KeyCode.LeftShift))
-                {
-                    velocityZ = localPlayer.GetRunSpeed() * inputV;
-                }
-                else
-                {
-                    velocityZ = localPlayer.GetWalkSpeed() * inputV;
-                }
-
-                velocityX = localPlayer.GetStrafeSpeed() * inputH;
             }
-
-            bool grounded = localPlayer.IsPlayerGrounded();
-            Quaternion visualRot = localPlayer.GetRotation();
-            //rotating wold velocity to local player velocity.
-            Vector3 localVelocity = Quaternion.Inverse(visualRot) * currentVelocity;
-            //controlling players velocity when grounded to give better control.
-            localPlayer.SetVelocity(visualRot * new Vector3((Mathf.Approximately(inputH, 0f) && !grounded) ? localVelocity.x : velocityX, Mathf.Clamp(currentVelocity.y, float.MinValue, localPlayer.GetJumpImpulse()), (Mathf.Approximately(inputV, 0f) && !grounded) ? localVelocity.z : velocityZ));
 
             lastWorldPos = teleportPoint;
             lastLocalPos = linkedObject.InverseTransformPoint(teleportPoint);
             lastWorldRot = teleportRot;
             lastLocalRot = linkedObject.InverseTransformDirection(teleportRot * Vector3.forward);
-            lastVelocity = localPlayer.GetVelocity();
-
-            platformVelocity = (linkedObject.position - lastPlatformPos) / Time.deltaTime;
-            lastPlatformPos = linkedObject.position;
+            
         }
 
         if (!linkLock)
@@ -138,7 +114,7 @@ public class PlatformLink : UdonSharpBehaviour
                 if (linkedObject != null)
                 {
                     //add time to unlink timer. If greater then threshold release from platform.
-                    unLinkTimer += Time.deltaTime;
+                    unLinkTimer += Time.fixedDeltaTime;
                     if (unLinkTimer > 0.1f)
                     {
                         ReleaseFromPlatform(platformVelocity);
@@ -195,6 +171,7 @@ public class PlatformLink : UdonSharpBehaviour
     private void FixedUpdate()
     {
 #if !UNITY_EDITOR
+        fixedupdate = true;
         if (linkedObject != null)
         {
             VRCPlayerApi.TrackingData avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.AvatarRoot);
@@ -204,6 +181,7 @@ public class PlatformLink : UdonSharpBehaviour
             //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
             Quaternion teleportRot = Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)).normalized;
             float velocityZ, velocityX;
+            Vector3 currentVelocity = localPlayer.GetVelocity();
 
             if (localPlayer.IsUserInVR())
             {
@@ -234,10 +212,16 @@ public class PlatformLink : UdonSharpBehaviour
             bool grounded = localPlayer.IsPlayerGrounded();
             Quaternion visualRot = localPlayer.GetRotation();
             //controlling players velocity when grounded to give better control.
-            localPlayer.SetVelocity(lastVelocity);
+            Vector3 localVelocity = Quaternion.Inverse(visualRot) * currentVelocity;
+            //controlling players velocity when grounded to give better control.
+            localPlayer.SetVelocity(visualRot * new Vector3((Mathf.Approximately(inputH, 0f) && !grounded) ? localVelocity.x : velocityX, Mathf.Clamp(currentVelocity.y, float.MinValue, localPlayer.GetJumpImpulse()), (Mathf.Approximately(inputV, 0f) && !grounded) ? localVelocity.z : velocityZ));
+
 
             lastWorldPos = teleportPoint;
             lastWorldRot = teleportRot;
+
+            platformVelocity = (linkedObject.position - lastPlatformPos) / Time.fixedDeltaTime;
+            lastPlatformPos = linkedObject.position;
         }
 
 #endif
