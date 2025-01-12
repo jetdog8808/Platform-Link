@@ -60,6 +60,7 @@ public class PlatformLink : UdonSharpBehaviour
             return;
         }
 
+        //jank fix for high fps issues
         if (!fixedupdate) return;
         fixedupdate = false;
 
@@ -69,15 +70,19 @@ public class PlatformLink : UdonSharpBehaviour
             //last location on platform + how much player moved from last frame.
             Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarRoot.position - lastWorldPos);
             //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
+            //vr drifing seams to be coming from between frame rotation changes.
             Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRoot.rotation * Quaternion.Inverse(lastWorldRot))).normalized;
 
             if (localPlayer.IsUserInVR())
             {
-                teleportRot = avatarRoot.rotation;
                 // teleport explanation -> gist.github.com/Phasedragon/5b76edfb8723b6bc4a49cd43adde5d3d
                 VRCPlayerApi.TrackingData origin = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
                 Quaternion invPlayerRot = Quaternion.Inverse(avatarRoot.rotation);
-                localPlayer.TeleportTo(teleportPoint + teleportRot * invPlayerRot * (origin.position - avatarRoot.position), teleportRot * (invPlayerRot * origin.rotation), VRC_SceneDescriptor.SpawnOrientation.AlignRoomWithSpawnPoint, true);
+                localPlayer.TeleportTo(teleportPoint + (teleportRot * invPlayerRot * (origin.position - avatarRoot.position)), teleportRot * (invPlayerRot * origin.rotation), VRC_SceneDescriptor.SpawnOrientation.AlignRoomWithSpawnPoint, true);
+                //some how this fixes vr drift on rotating platforms
+                avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.AvatarRoot);
+                teleportPoint = avatarRoot.position;
+                teleportRot = avatarRoot.rotation;
             }
             else
             {
@@ -169,6 +174,7 @@ public class PlatformLink : UdonSharpBehaviour
 #endif
     }
 
+    //jank fix to vrc locomotion issues
     private void FixedUpdate()
     {
 #if !UNITY_EDITOR
@@ -186,12 +192,15 @@ public class PlatformLink : UdonSharpBehaviour
 
             if (localPlayer.IsUserInVR())
             {
-                teleportRot = avatarRoot.rotation;
                 // teleport explanation -> gist.github.com/Phasedragon/5b76edfb8723b6bc4a49cd43adde5d3d
                 VRCPlayerApi.TrackingData origin = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
                 Quaternion invPlayerRot = Quaternion.Inverse(avatarRoot.rotation);
-                localPlayer.TeleportTo(teleportPoint + teleportRot * invPlayerRot * (origin.position - avatarRoot.position), teleportRot * (invPlayerRot * origin.rotation), VRC_SceneDescriptor.SpawnOrientation.AlignRoomWithSpawnPoint, true);
-                
+                localPlayer.TeleportTo(teleportPoint + (teleportRot * invPlayerRot * (origin.position - avatarRoot.position)), teleportRot * (invPlayerRot * origin.rotation), VRC_SceneDescriptor.SpawnOrientation.AlignRoomWithSpawnPoint, true);
+                //some how this fixes vr drift on rotating platforms
+                avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.AvatarRoot);
+                teleportPoint = avatarRoot.position;
+                teleportRot = avatarRoot.rotation;
+
                 velocityZ = localPlayer.GetRunSpeed() * inputV;
                 velocityX = localPlayer.GetStrafeSpeed() * inputH;
             }
@@ -218,7 +227,7 @@ public class PlatformLink : UdonSharpBehaviour
             //controlling players velocity when grounded to give better control.
             localPlayer.SetVelocity(visualRot * new Vector3((Mathf.Approximately(inputH, 0f) && !grounded) ? localVelocity.x : velocityX, Mathf.Clamp(currentVelocity.y, float.MinValue, localPlayer.GetJumpImpulse()), (Mathf.Approximately(inputV, 0f) && !grounded) ? localVelocity.z : velocityZ));
 
-
+            
             lastWorldPos = teleportPoint;
             lastWorldRot = teleportRot;
 
