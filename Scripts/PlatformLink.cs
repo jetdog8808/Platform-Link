@@ -73,6 +73,7 @@ public class PlatformLink : UdonSharpBehaviour
 
             if (localPlayer.IsUserInVR())
             {
+                teleportRot = avatarRoot.rotation;
                 // teleport explanation -> gist.github.com/Phasedragon/5b76edfb8723b6bc4a49cd43adde5d3d
                 VRCPlayerApi.TrackingData origin = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
                 Quaternion invPlayerRot = Quaternion.Inverse(avatarRoot.rotation);
@@ -185,11 +186,12 @@ public class PlatformLink : UdonSharpBehaviour
 
             if (localPlayer.IsUserInVR())
             {
+                teleportRot = avatarRoot.rotation;
                 // teleport explanation -> gist.github.com/Phasedragon/5b76edfb8723b6bc4a49cd43adde5d3d
                 VRCPlayerApi.TrackingData origin = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
                 Quaternion invPlayerRot = Quaternion.Inverse(avatarRoot.rotation);
                 localPlayer.TeleportTo(teleportPoint + teleportRot * invPlayerRot * (origin.position - avatarRoot.position), teleportRot * (invPlayerRot * origin.rotation), VRC_SceneDescriptor.SpawnOrientation.AlignRoomWithSpawnPoint, true);
-
+                
                 velocityZ = localPlayer.GetRunSpeed() * inputV;
                 velocityX = localPlayer.GetStrafeSpeed() * inputH;
             }
