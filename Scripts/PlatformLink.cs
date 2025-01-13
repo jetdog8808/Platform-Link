@@ -44,7 +44,6 @@ public class PlatformLink : UdonSharpBehaviour
 
     public void LateUpdate()
     {
-        
 #if !UNITY_EDITOR
         //VRC Runtime:
         VRCPlayerApi.TrackingData avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.AvatarRoot);
@@ -64,13 +63,14 @@ public class PlatformLink : UdonSharpBehaviour
         if (!fixedupdate) return;
         fixedupdate = false;
 
+        bool linked = linkedObject != null;
+
         //If linked move with the platform.
-        if (linkedObject != null)
+        if (linked)
         {
             //last location on platform + how much player moved from last frame.
             Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarRoot.position - lastWorldPos);
             //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
-            //vr drifing seams to be coming from between frame rotation changes.
             Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRoot.rotation * Quaternion.Inverse(lastWorldRot))).normalized;
 
             if (localPlayer.IsUserInVR())
@@ -99,7 +99,7 @@ public class PlatformLink : UdonSharpBehaviour
         if (!linkLock)
         {
             //Check if there is a valid platfrom and link/unlink from results. 
-            if (PlatformCheck((linkedObject == null) ? avatarRoot.position : lastWorldPos, out RaycastHit hitinfo))
+            if (PlatformCheck(linked ? lastWorldPos : avatarRoot.position, out RaycastHit hitinfo))
             {
                 //is player currently linked to a platform.
                 if (linkedObject == null)
@@ -117,7 +117,7 @@ public class PlatformLink : UdonSharpBehaviour
             else
             {
                 //if currently linked to a platform.
-                if (linkedObject != null)
+                if (linked)
                 {
                     //add time to unlink timer. If greater then threshold release from platform.
                     unLinkTimer += Time.fixedDeltaTime;
@@ -185,7 +185,7 @@ public class PlatformLink : UdonSharpBehaviour
 
             //last location on platform
             Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos);
-            //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
+            //last rotation vector on platform projected onto +y normal.
             Quaternion teleportRot = Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)).normalized;
             float velocityZ, velocityX;
             Vector3 currentVelocity = localPlayer.GetVelocity();
@@ -225,12 +225,13 @@ public class PlatformLink : UdonSharpBehaviour
             //controlling players velocity when grounded to give better control.
             Vector3 localVelocity = Quaternion.Inverse(visualRot) * currentVelocity;
             //controlling players velocity when grounded to give better control.
+            //calling setvelocity on fixedupdate does not set isgrounded to false.
             localPlayer.SetVelocity(visualRot * new Vector3((Mathf.Approximately(inputH, 0f) && !grounded) ? localVelocity.x : velocityX, Mathf.Clamp(currentVelocity.y, float.MinValue, localPlayer.GetJumpImpulse()), (Mathf.Approximately(inputV, 0f) && !grounded) ? localVelocity.z : velocityZ));
 
-            
             lastWorldPos = teleportPoint;
             lastWorldRot = teleportRot;
 
+            //platform velocity for unlinking add velocity.
             platformVelocity = (linkedObject.position - lastPlatformPos) / Time.fixedDeltaTime;
             lastPlatformPos = linkedObject.position;
         }
@@ -312,6 +313,7 @@ public class PlatformLink : UdonSharpBehaviour
         lastWorldRot = rot;
         lastLocalRot = platform.InverseTransformDirection(rot * Vector3.forward);
         lastPlatformPos = platform.position;
+        platformVelocity = Vector3.zero;
         linkLock = lockToPlatform;
     }
 
