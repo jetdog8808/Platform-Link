@@ -4,7 +4,7 @@ using UnityEngine;
 using VRC.SDKBase;
 using VRC.Udon.Common;
 
-[UdonBehaviourSyncMode(BehaviourSyncMode.None)]
+[UdonBehaviourSyncMode(BehaviourSyncMode.None), DefaultExecutionOrder(int.MaxValue - 1000000)]
 public class PlatformLink : UdonSharpBehaviour
 {
     [Tooltip("Which layers should the player link too.")]
@@ -17,17 +17,18 @@ public class PlatformLink : UdonSharpBehaviour
     public bool linkLock = false;
 
     private Transform linkedObject;
-    private Vector3 lastWorldPos, lastLocalPos, lastPlatformPos, lastLocalRot;
-    private Quaternion lastWorldRot;
+    private Vector3 lastWorldPos, lastLocalPos, lastPlatformPos, lastLocalRot, updateOffsetPos;
+    private Quaternion lastWorldRot, updateOffsetRot;
     private float inputH, inputV,
         unLinkTimer;
+    private bool updateTeleport = false;
     private RaycastHit[] hitObjects = new RaycastHit[128];
     private Collider[] localOverlaps = new Collider[32];
     private RaycastHit invalidHit;
     private const int localLayerMask = 1024;
     private int localPlayerCollision;
     private VRCPlayerApi localPlayer;
-    
+
     private void Start()
     {
         localPlayer = Networking.LocalPlayer;
@@ -39,18 +40,22 @@ public class PlatformLink : UdonSharpBehaviour
 
         invalidHit.distance = float.MaxValue;
     }
-    
-    public void LateUpdate()
+
+    //player controler moves in FixedUpdate after udon fixed update. So teleporting the player before user input movement gets calculated.
+    //teleporing in FixedUpdate also gives more consistent results. 
+    public void FixedUpdate()
     {
         Vector3 platformVelocity = Vector3.zero;
-#if !UNITY_EDITOR
-        //VRC Runtime:
+#if UNITY_EDITOR
+        VRCPlayerApi.TrackingData avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
+#else
         VRCPlayerApi.TrackingData avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.AvatarRoot);
+#endif
         //check if player is in station.
         if (StationCheck(avatarRoot.position))
         {
             //release from platform if linked.
-            if(linkedObject != null)
+            if (linkedObject)
             {
                 ReleaseFromPlatform(Vector3.zero);
             }
@@ -59,12 +64,19 @@ public class PlatformLink : UdonSharpBehaviour
         }
 
         //If linked move with the platform.
-        if (linkedObject != null)
+        if (linkedObject)
         {
             //last location on platform + how much player moved from last frame.
-            Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarRoot.position - lastWorldPos);
+#if UNITY_EDITOR
+            Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + ((avatarRoot.position - updateOffsetPos) - lastWorldPos);
+#else
+            Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + ((avatarRoot.position - updateOffsetPos) - lastWorldPos);
+#endif
+
+            updateOffsetPos = Vector3.zero;
             //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
-            Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRoot.rotation * Quaternion.Inverse(lastWorldRot))).normalized;
+            Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * ((avatarRoot.rotation * Quaternion.Inverse(updateOffsetRot)) * Quaternion.Inverse(lastWorldRot))).normalized;
+            updateOffsetRot = Quaternion.identity;
             float velocityZ, velocityX;
             Vector3 currentVelocity = localPlayer.GetVelocity();
 
@@ -94,29 +106,32 @@ public class PlatformLink : UdonSharpBehaviour
                 velocityX = localPlayer.GetStrafeSpeed() * inputH;
             }
 
+#if !UNITY_EDITOR
             bool grounded = localPlayer.IsPlayerGrounded();
             Quaternion visualRot = localPlayer.GetRotation();
             //rotating wold velocity to local player velocity.
             Vector3 localVelocity = Quaternion.Inverse(visualRot) * currentVelocity;
             //controlling players velocity when grounded to give better control.
             localPlayer.SetVelocity(visualRot * new Vector3((Mathf.Approximately(inputH, 0f) && !grounded) ? localVelocity.x : velocityX, Mathf.Clamp(currentVelocity.y, float.MinValue, localPlayer.GetJumpImpulse()), (Mathf.Approximately(inputV, 0f) && !grounded) ? localVelocity.z : velocityZ));
-            
+#endif
+
             lastWorldPos = teleportPoint;
             lastLocalPos = linkedObject.InverseTransformPoint(teleportPoint);
             lastWorldRot = teleportRot;
             lastLocalRot = linkedObject.InverseTransformDirection(teleportRot * Vector3.forward);
 
-            platformVelocity = (linkedObject.position - lastPlatformPos) / Time.deltaTime;
+            platformVelocity = (linkedObject.position - lastPlatformPos) / Time.fixedDeltaTime;
             lastPlatformPos = linkedObject.position;
+            updateTeleport = true;
         }
 
         if (!linkLock)
         {
             //Check if there is a valid platfrom and link/unlink from results. 
-            if (PlatformCheck((linkedObject == null) ? avatarRoot.position : lastWorldPos, out RaycastHit hitinfo))
+            if (PlatformCheck((!linkedObject) ? avatarRoot.position : lastWorldPos, out RaycastHit hitinfo))
             {
                 //is player currently linked to a platform.
-                if (linkedObject == null)
+                if (!linkedObject)
                 {
                     //only link if player is grounded
                     if (localPlayer.IsPlayerGrounded()) LinkToPlatform(hitinfo.transform, avatarRoot.position, avatarRoot.rotation);
@@ -134,58 +149,53 @@ public class PlatformLink : UdonSharpBehaviour
                 if (linkedObject != null)
                 {
                     //add time to unlink timer. If greater then threshold release from platform.
-                    unLinkTimer += Time.deltaTime;
+                    unLinkTimer += Time.fixedDeltaTime;
                     if (unLinkTimer > 0.1f)
                     {
-                        ReleaseFromPlatform(platformVelocity);
+                        ReleaseFromPlatform(localPlayer.IsPlayerGrounded() ? Vector3.zero : platformVelocity);
                     }
                 }
             }
         }
-        
+
+    }
+
+    //due to teleporting in FixedUpdate visually you lag a little behind the platoform. so teleport again on update after movement to make things look more stable.
+    public void Update()
+    {
+        //If linked move with the platform.
+        //only update once after FixedUpdate. was getting strange sliding if fps was higher then FixedUpdateRate.
+        if (linkedObject && updateTeleport)
+        {
+#if UNITY_EDITOR
+            VRCPlayerApi.TrackingData avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
 #else
-        //clientsim:
-        Vector3 avatarPos = localPlayer.GetPosition();
-        Quaternion avatarRot = localPlayer.GetRotation();
-        
-        if (StationCheck(avatarPos)) return;
-        
-        if (linkedObject != null)
-        {
-            Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarPos - lastWorldPos);
-            Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRot * Quaternion.Inverse(lastWorldRot))).normalized;
+            VRCPlayerApi.TrackingData avatarRoot = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.AvatarRoot);
+#endif
+            //last location on platform + how much player moved from last frame.
+            Vector3 teleportPoint = linkedObject.TransformPoint(lastLocalPos) + (avatarRoot.position - updateOffsetPos - lastWorldPos);
+            updateOffsetPos += teleportPoint - avatarRoot.position;
+            //last rotation vector on platform projected onto +y normal + how much player has rotated from last frame.
+            Quaternion teleportRot = (Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * (avatarRoot.rotation * Quaternion.Inverse(lastWorldRot))).normalized;
+            updateOffsetRot *= Quaternion.LookRotation(Vector3.ProjectOnPlane(linkedObject.TransformDirection(lastLocalRot), Vector3.up)) * Quaternion.Inverse(lastWorldRot);
 
-            localPlayer.TeleportTo(teleportPoint, teleportRot, VRC_SceneDescriptor.SpawnOrientation.AlignPlayerWithSpawnPoint, true);
-
-            lastWorldPos = teleportPoint;
-            lastLocalPos = linkedObject.InverseTransformPoint(teleportPoint);
-            lastWorldRot = teleportRot;
-            lastLocalRot = linkedObject.InverseTransformDirection(teleportRot * Vector3.forward);
-
-            platformVelocity = (linkedObject.position - lastPlatformPos) / Time.deltaTime;
-            lastPlatformPos = linkedObject.position;
-        }
-
-        if (!linkLock)
-        {
-            if (PlatformCheck(avatarPos, out RaycastHit hitinfo))
+            if (localPlayer.IsUserInVR())
             {
-                if (linkedObject == null)
-                {
-                    if (localPlayer.IsPlayerGrounded()) LinkToPlatform(hitinfo.transform, avatarPos, avatarRot);
-                }
-                else
-                {
-                    if (linkedObject != hitinfo.transform) LinkToPlatform(hitinfo.transform, avatarPos, avatarRot);
-                }
+                // teleport explanation -> gist.github.com/Phasedragon/5b76edfb8723b6bc4a49cd43adde5d3d
+                VRCPlayerApi.TrackingData origin = localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Origin);
+                Quaternion invPlayerRot = Quaternion.Inverse(avatarRoot.rotation);
+                localPlayer.TeleportTo(teleportPoint + teleportRot * invPlayerRot * (origin.position - avatarRoot.position), teleportRot * (invPlayerRot * origin.rotation), VRC_SceneDescriptor.SpawnOrientation.AlignRoomWithSpawnPoint, true);
+
             }
             else
             {
-                if (linkedObject != null) ReleaseFromPlatform(platformVelocity);
+                localPlayer.TeleportTo(teleportPoint, teleportRot, VRC_SceneDescriptor.SpawnOrientation.AlignPlayerWithSpawnPoint, true);
+
             }
+            updateTeleport = false;
+
         }
-        
-#endif
+
     }
 
     //Check if there are any valid platform below.
@@ -245,7 +255,7 @@ public class PlatformLink : UdonSharpBehaviour
     {
         //checking local player layer for any protected colliders. if there is the player is not in a station. if there are none then the player is in a station.
         int overlapCount = Physics.OverlapSphereNonAlloc(position, 1f, localOverlaps);
-        for(int i = 0; i < overlapCount; i++)
+        for (int i = 0; i < overlapCount; i++)
         {
             if (!Utilities.IsValid(localOverlaps[i])) return false;
         }
@@ -262,6 +272,8 @@ public class PlatformLink : UdonSharpBehaviour
         lastWorldRot = rot;
         lastLocalRot = platform.InverseTransformDirection(rot * Vector3.forward);
         lastPlatformPos = platform.position;
+        updateTeleport = false;
+        updateOffsetPos = Vector3.zero;
         linkLock = lockToPlatform;
     }
 
@@ -271,7 +283,7 @@ public class PlatformLink : UdonSharpBehaviour
         linkedObject = null;
         unLinkTimer = 0f;
         //if inherit velocity is true add release velocity to player.
-        if (inheriteVelocity) localPlayer.SetVelocity(localPlayer.GetVelocity() + Velocity);
+        if (inheriteVelocity ) localPlayer.SetVelocity(localPlayer.GetVelocity() + Velocity);
     }
     //makes sure to unlink players when disabled.
     private void OnDisable()
@@ -292,4 +304,8 @@ public class PlatformLink : UdonSharpBehaviour
         inputV = value;
     }
 
+
+
 }
+
+

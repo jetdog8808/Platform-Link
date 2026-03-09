@@ -60,6 +60,7 @@ MonoBehaviour:
     m_Bits: 2049
   inheriteVelocity: 1
   unLinkDistance: 10
+  linkLock: 0
 --- !u!114 &6225493397918924491
 MonoBehaviour:
   m_ObjectHideFlags: 0
