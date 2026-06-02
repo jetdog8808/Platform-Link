@@ -274,6 +274,7 @@ public class PlatformLink : UdonSharpBehaviour
         lastPlatformPos = platform.position;
         updateTeleport = false;
         updateOffsetPos = Vector3.zero;
+        updateOffsetRot = Quaternion.identity;
         linkLock = lockToPlatform;
     }
 
@@ -283,7 +284,7 @@ public class PlatformLink : UdonSharpBehaviour
         linkedObject = null;
         unLinkTimer = 0f;
         //if inherit velocity is true add release velocity to player.
-        if (inheriteVelocity ) localPlayer.SetVelocity(localPlayer.GetVelocity() + Velocity);
+        if (inheriteVelocity) localPlayer.SetVelocity(localPlayer.GetVelocity() + Velocity);
     }
     //makes sure to unlink players when disabled.
     private void OnDisable()
